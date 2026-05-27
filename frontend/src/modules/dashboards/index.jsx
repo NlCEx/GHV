@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell
+  ResponsiveContainer, Cell, Legend
 } from 'recharts'
 import api from '../../api'
 import './dashboards.css'
@@ -15,37 +15,64 @@ const fmtK = v => {
 }
 
 const COLORS = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#9c27b0', '#00bcd4', '#ff7043', '#8bc34a', '#795548', '#607d8b']
+const MESES_ABR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+const mesAtual = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
+}
 
 function abreviarDescricao(desc, max = 28) {
   if (!desc) return ''
-  // Remove brand prefix (before first " - " or first space word)
-  const sem = desc.replace(/^[A-Z0-9\.\-]+\s+-\s+/i, '').replace(/^(GHV|BIOTEC|FLEXPELL|UNICARE|PLAST JOIA|SINEPLAST|AVANUTRE|ARAKEN)\s+-?\s*/i, '')
+  const sem = desc
+    .replace(/^[A-Z0-9\.\-]+\s+-\s+/i, '')
+    .replace(/^(GHV|BIOTEC|FLEXPELL|UNICARE|PLAST JOIA|SINEPLAST|AVANUTRE|ARAKEN)\s+-?\s*/i, '')
   return sem.length > max ? sem.substring(0, max) + '…' : sem
 }
 
 export default function Dashboards() {
   const [resumo, setResumo] = useState(null)
   const [digisat, setDigisat] = useState(null)
+  const [tendencia, setTendencia] = useState([])
   const [carregando, setCarregando] = useState(true)
+  const [mesFiltro, setMesFiltro] = useState(mesAtual)
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
   const [arquivoSelecionado, setArquivoSelecionado] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
   const fileRef = useRef()
 
-  useEffect(() => { carregar() }, [])
-
-  async function carregar() {
+  const carregar = useCallback(async () => {
     setCarregando(true)
     try {
-      const [r, d] = await Promise.all([
-        api.get('/dashboards/resumo'),
+      const mesParam = mesFiltro ? `?mes=${mesFiltro}` : ''
+      const [r, d, t] = await Promise.all([
+        api.get(`/dashboards/resumo${mesParam}`),
         api.get('/dashboards/digisat'),
+        api.get('/dashboards/tendencia'),
       ])
       setResumo(r.data)
       setDigisat(d.data)
+      setTendencia(t.data)
+      setUltimaAtualizacao(new Date())
     } catch { /* silent */ }
     finally { setCarregando(false) }
-  }
+  }, [mesFiltro])
+
+  useEffect(() => { carregar() }, [carregar])
+
+  // Auto-refresh ao voltar para a aba
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'visible') carregar() }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [carregar])
+
+  // Polling: atualiza a cada 60 segundos enquanto a página está aberta
+  useEffect(() => {
+    const id = setInterval(carregar, 60_000)
+    return () => clearInterval(id)
+  }, [carregar])
 
   function handleFileChange(e) {
     const file = e.target.files[0]
@@ -83,6 +110,15 @@ export default function Dashboards() {
 
   const saldo = resumo ? resumo.receitas - resumo.despesas : 0
 
+  const tendenciaData = tendencia.map(t => {
+    const [, m] = t.mes.split('-')
+    return {
+      mes: MESES_ABR[parseInt(m) - 1],
+      receitas: Number(t.receitas),
+      despesas: Number(t.despesas),
+    }
+  })
+
   const topChartData = (digisat?.topProdutos || []).map(p => ({
     nome: abreviarDescricao(p.descricao),
     valor: Number(p.total_vendas),
@@ -94,32 +130,93 @@ export default function Dashboards() {
     saldo: Number(p.saldo),
   }))
 
+  const labelMes = mesFiltro
+    ? `${MESES_ABR[parseInt(mesFiltro.split('-')[1]) - 1]} ${mesFiltro.split('-')[0]}`
+    : 'Todos os períodos'
+
   return (
     <div className="dashboards">
-      {carregando ? (
-        <p style={{ color: '#888', padding: 20 }}>Carregando dados...</p>
-      ) : (
+      {/* ── Barra de filtro ── */}
+      <div className="dash-filter-bar">
+        <input
+          type="month"
+          value={mesFiltro}
+          onChange={e => setMesFiltro(e.target.value)}
+          className="dash-mes-input"
+        />
+        <button
+          className={`dash-btn-todos${!mesFiltro ? ' active' : ''}`}
+          onClick={() => setMesFiltro('')}
+        >
+          Todos os períodos
+        </button>
+        <button
+          className={`dash-btn-refresh${carregando ? ' spinning' : ''}`}
+          onClick={carregar}
+          disabled={carregando}
+          title="Atualizar dados"
+        >
+          🔄
+        </button>
+        {ultimaAtualizacao && (
+          <span className="dash-update-time">
+            {carregando ? 'Atualizando...' : `Atualizado às ${ultimaAtualizacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+          </span>
+        )}
+      </div>
+
+      {/* ── Skeleton no primeiro carregamento ── */}
+      {carregando && !resumo && (
+        <div className="dash-skeleton-grid">
+          {[...Array(6)].map((_, i) => <div key={i} className="dash-skeleton-card" />)}
+        </div>
+      )}
+
+      {resumo && (
         <>
-          {/* ── Financeiro cards ── */}
-          {resumo && (
+          {/* ── Cards Financeiros ── */}
+          <div>
+            <div className="dash-section-header">
+              <span className="dash-section-title">Financeiro</span>
+              <span className="dash-section-sub">{labelMes}</span>
+            </div>
             <div className="dash-cards">
               {[
-                { label: 'Receita Total', value: `R$ ${fmt(resumo.receitas)}`, color: 'success' },
+                { label: 'Receitas', value: `R$ ${fmt(resumo.receitas)}`, color: 'success' },
                 { label: 'Despesas', value: `R$ ${fmt(resumo.despesas)}`, color: 'danger' },
-                { label: 'Saldo', value: `R$ ${fmt(saldo)}`, color: saldo >= 0 ? 'primary' : 'danger' },
-                { label: 'Itens em Estoque', value: resumo.estoque, color: 'primary' },
+                { label: 'Saldo', value: `R$ ${fmt(saldo)}`, color: saldo >= 0 ? 'success' : 'danger' },
+                { label: 'Itens em Estoque', value: Number(resumo.estoque).toLocaleString('pt-BR'), color: 'primary' },
                 { label: 'Pesquisas Ativas', value: resumo.pesquisasAtivas, color: 'warning' },
+                { label: 'Estoque Crítico', value: resumo.produtosCriticos, color: resumo.produtosCriticos > 0 ? 'danger' : 'success' },
               ].map(c => (
                 <div key={c.label} className="dash-card">
                   <span className="dash-card-label">{c.label}</span>
-                  <span className="dash-card-value">{c.value}</span>
+                  <span className={`dash-card-value dash-card-value--${c.color}`}>{c.value}</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* ── Tendência Financeira ── */}
+          {tendenciaData.length > 1 && (
+            <div className="dash-chart-box">
+              <h3>Receitas × Despesas — Últimos {tendenciaData.length} meses</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={tendenciaData} margin={{ left: 10, right: 10, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={72} />
+                  <Tooltip formatter={(v, n) => [`R$ ${fmt(v)}`, n === 'receitas' ? 'Receitas' : 'Despesas']} />
+                  <Legend formatter={n => n === 'receitas' ? 'Receitas' : 'Despesas'} />
+                  <Bar dataKey="receitas" name="receitas" fill="#34a853" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="despesas" name="despesas" fill="#ea4335" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
           {/* ── Digisat section ── */}
-          <div style={{ margin: '8px 0 16px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#374151' }}>
               📊 Dados Digisat
               {digisat?.importacao && (
@@ -129,7 +226,6 @@ export default function Dashboards() {
               )}
             </h3>
 
-            {/* Upload button — step 1: selecionar arquivo */}
             {!arquivoSelecionado && !uploading && (
               <label style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px',
@@ -141,7 +237,6 @@ export default function Dashboards() {
               </label>
             )}
 
-            {/* Step 2: arquivo selecionado — confirmar ou cancelar */}
             {arquivoSelecionado && !uploading && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 14px' }}>
                 <span style={{ fontSize: 13, color: '#0369a1' }}>📄 {arquivoSelecionado.name}</span>
@@ -160,11 +255,12 @@ export default function Dashboards() {
               </div>
             )}
 
-            {uploading && (
-              <span style={{ fontSize: 13, color: '#6b7280' }}>⏳ Processando PDF...</span>
+            {uploading && <span style={{ fontSize: 13, color: '#6b7280' }}>⏳ Processando PDF...</span>}
+            {uploadMsg && (
+              <span style={{ fontSize: 13, color: uploadMsg.startsWith('✅') ? '#16a34a' : '#dc2626' }}>
+                {uploadMsg}
+              </span>
             )}
-
-            {uploadMsg && <span style={{ fontSize: 13, color: uploadMsg.startsWith('✅') ? '#16a34a' : '#dc2626' }}>{uploadMsg}</span>}
           </div>
 
           {!digisat ? (
@@ -174,8 +270,7 @@ export default function Dashboards() {
             </div>
           ) : (
             <>
-              {/* Digisat KPI cards */}
-              <div className="dash-cards" style={{ marginBottom: 20 }}>
+              <div className="dash-cards" style={{ marginBottom: 4 }}>
                 {[
                   { label: 'Total de Vendas', value: `R$ ${fmt(digisat.resumo.total_vendas)}`, color: 'success' },
                   { label: 'Produtos Importados', value: digisat.resumo.total_produtos, color: 'primary' },
@@ -185,13 +280,12 @@ export default function Dashboards() {
                 ].map(c => (
                   <div key={c.label} className="dash-card">
                     <span className="dash-card-label">{c.label}</span>
-                    <span className="dash-card-value">{c.value}</span>
+                    <span className={`dash-card-value dash-card-value--${c.color}`}>{c.value}</span>
                   </div>
                 ))}
               </div>
 
               <div className="dash-charts">
-                {/* Top 10 produtos por vendas */}
                 <div className="dash-chart-box">
                   <h3>Top 10 Produtos — Total Vendido (R$)</h3>
                   {topChartData.length === 0 ? (
@@ -200,9 +294,9 @@ export default function Dashboards() {
                     <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={topChartData} layout="vertical" margin={{ left: 10, right: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
+                        <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
                         <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={145} />
-                        <Tooltip formatter={(v, n) => [`R$ ${fmt(v)}`, 'Total vendido']} />
+                        <Tooltip formatter={(v) => [`R$ ${fmt(v)}`, 'Total vendido']} />
                         <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
                           {topChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Bar>
@@ -211,7 +305,6 @@ export default function Dashboards() {
                   )}
                 </div>
 
-                {/* Estoque baixo */}
                 <div className="dash-chart-box">
                   <h3>⚠️ Produtos com Estoque Baixo (≤ 10 un.)</h3>
                   {estoqueBaixoData.length === 0 ? (

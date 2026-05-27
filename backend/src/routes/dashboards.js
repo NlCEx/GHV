@@ -5,11 +5,16 @@ const router = Router()
 
 router.get('/resumo', async (req, res) => {
   try {
-    const [receitas, despesas, estoque, pesquisas] = await Promise.all([
-      pool.query("SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'receita'"),
-      pool.query("SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'despesa'"),
+    const { mes } = req.query
+    const mesFilter = mes ? `AND TO_CHAR(data, 'YYYY-MM') = $1` : ''
+    const params = mes ? [mes] : []
+
+    const [receitas, despesas, estoque, pesquisas, criticos] = await Promise.all([
+      pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'receita' ${mesFilter}`, params),
+      pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'despesa' ${mesFilter}`, params),
       pool.query('SELECT COALESCE(SUM(qtd), 0) AS total FROM produtos'),
       pool.query("SELECT COUNT(*) AS total FROM pesquisas WHERE status = 'ativa'"),
+      pool.query("SELECT COUNT(*) AS total FROM produtos WHERE minimo > 0 AND qtd < minimo"),
     ])
 
     res.json({
@@ -17,7 +22,29 @@ router.get('/resumo', async (req, res) => {
       despesas: Number(despesas.rows[0].total),
       estoque: Number(estoque.rows[0].total),
       pesquisasAtivas: Number(pesquisas.rows[0].total),
+      produtosCriticos: Number(criticos.rows[0].total),
     })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/tendencia', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM (
+        SELECT
+          TO_CHAR(data, 'YYYY-MM') AS mes,
+          SUM(CASE WHEN tipo = 'receita' THEN valor ELSE 0 END) AS receitas,
+          SUM(CASE WHEN tipo = 'despesa' THEN valor ELSE 0 END) AS despesas
+        FROM lancamentos
+        GROUP BY mes
+        ORDER BY mes DESC
+        LIMIT 12
+      ) t
+      ORDER BY mes ASC
+    `)
+    res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
