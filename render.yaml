@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ghv-sistema
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && npm install
+    startCommand: node backend/src/app.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
