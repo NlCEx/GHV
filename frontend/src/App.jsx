@@ -7,6 +7,7 @@ import Financeiro from './modules/financeiro'
 import Estoque from './modules/estoque'
 import Pesquisa from './modules/pesquisa'
 import Usuarios from './modules/usuarios'
+import Digisat from './modules/digisat'
 
 function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth()
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/estoque" element={<Estoque />} />
               <Route path="/pesquisa" element={<Pesquisa />} />
+              <Route path="/digisat" element={<Digisat />} />
               <Route path="/usuarios" element={<Usuarios />} />
             </Routes>
           </Layout>

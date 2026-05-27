@@ -36,3 +36,24 @@ CREATE TABLE IF NOT EXISTS pesquisas (
   data      DATE,
   criado_em TIMESTAMP   DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS digisat_importacoes (
+  id             SERIAL PRIMARY KEY,
+  arquivo_nome   TEXT,
+  periodo        TEXT,
+  total_produtos INTEGER,
+  total_vendas   NUMERIC(15, 2),
+  criado_em      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS digisat_itens (
+  id             SERIAL PRIMARY KEY,
+  importacao_id  INTEGER REFERENCES digisat_importacoes(id) ON DELETE CASCADE,
+  codigo         TEXT,
+  descricao      TEXT,
+  saldo          NUMERIC(12, 2),
+  preco          NUMERIC(12, 2),
+  total_vendas   NUMERIC(12, 2),
+  n_vendas       INTEGER,
+  qtd            NUMERIC(12, 2)
+);

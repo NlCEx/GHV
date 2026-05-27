@@ -6,6 +6,7 @@ const menuItems = [
   { path: '/financeiro', label: 'Financeiro', icon: '💰' },
   { path: '/estoque', label: 'Estoque', icon: '📦' },
   { path: '/pesquisa', label: 'Pesquisa', icon: '🔍' },
+  { path: '/digisat', label: 'Digisat', icon: '📥' },
   { path: '/usuarios', label: 'Usuários', icon: '👥' },
 ]
 
