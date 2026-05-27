@@ -9,6 +9,7 @@ import financeiroRoutes from './routes/financeiro.js'
 import estoqueRoutes from './routes/estoque.js'
 import pesquisaRoutes from './routes/pesquisa.js'
 import dashboardsRoutes from './routes/dashboards.js'
+import usuariosRoutes from './routes/usuarios.js'
 import { autenticar } from './middleware/auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -22,6 +23,7 @@ app.use('/api/financeiro', autenticar, financeiroRoutes)
 app.use('/api/estoque', autenticar, estoqueRoutes)
 app.use('/api/pesquisa', autenticar, pesquisaRoutes)
 app.use('/api/dashboards', autenticar, dashboardsRoutes)
+app.use('/api/usuarios', autenticar, usuariosRoutes)
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }))
 
 // Servir o frontend React em produção

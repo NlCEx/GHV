@@ -6,6 +6,7 @@ import Dashboards from './modules/dashboards'
 import Financeiro from './modules/financeiro'
 import Estoque from './modules/estoque'
 import Pesquisa from './modules/pesquisa'
+import Usuarios from './modules/usuarios'
 
 function RotaProtegida({ children }) {
   const { usuario, carregando } = useAuth()
@@ -26,6 +27,7 @@ export default function App() {
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/estoque" element={<Estoque />} />
               <Route path="/pesquisa" element={<Pesquisa />} />
+              <Route path="/usuarios" element={<Usuarios />} />
             </Routes>
           </Layout>
         </RotaProtegida>

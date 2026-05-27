@@ -7,6 +7,7 @@ const titles = {
   '/financeiro': 'Financeiro',
   '/estoque': 'Estoque',
   '/pesquisa': 'Pesquisa',
+  '/usuarios': 'Usuários',
 }
 
 export default function Header() {
