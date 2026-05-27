@@ -2,7 +2,10 @@
   "name": "ghv-sistema",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build && cd ../backend && npm install",
+    "build": "bash build.sh",
     "start": "node backend/src/app.js"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
