@@ -27,6 +27,7 @@ export default function Dashboards() {
   const [resumo, setResumo] = useState(null)
   const [digisat, setDigisat] = useState(null)
   const [carregando, setCarregando] = useState(true)
+  const [arquivoSelecionado, setArquivoSelecionado] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
   const fileRef = useRef()
@@ -46,24 +47,37 @@ export default function Dashboards() {
     finally { setCarregando(false) }
   }
 
-  async function handleUpload(e) {
+  function handleFileChange(e) {
     const file = e.target.files[0]
     if (!file) return
+    setArquivoSelecionado(file)
     setUploadMsg('')
+  }
+
+  function cancelarSelecao() {
+    setArquivoSelecionado(null)
+    setUploadMsg('')
+    fileRef.current.value = ''
+  }
+
+  async function confirmarImportacao() {
+    if (!arquivoSelecionado) return
     setUploading(true)
+    setUploadMsg('')
     const form = new FormData()
-    form.append('pdf', file)
+    form.append('pdf', arquivoSelecionado)
     try {
       const { data } = await api.post('/digisat/importar', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      setUploadMsg(`✅ ${data.total_produtos} produtos importados`)
+      setUploadMsg(`✅ ${data.total_produtos} produtos importados com sucesso!`)
+      setArquivoSelecionado(null)
+      fileRef.current.value = ''
       await carregar()
     } catch (err) {
       setUploadMsg('❌ ' + (err.response?.data?.erro || 'Erro ao importar PDF'))
     } finally {
       setUploading(false)
-      fileRef.current.value = ''
     }
   }
 
@@ -115,15 +129,41 @@ export default function Dashboards() {
               )}
             </h3>
 
-            {/* Upload button */}
-            <label style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px',
-              background: '#1a73e8', color: '#fff', borderRadius: 6, cursor: uploading ? 'wait' : 'pointer',
-              fontSize: 13, fontWeight: 500, opacity: uploading ? 0.7 : 1,
-            }}>
-              {uploading ? '⏳ Processando...' : '📥 Carregar PDF Digisat'}
-              <input ref={fileRef} type="file" accept=".pdf" onChange={handleUpload} style={{ display: 'none' }} disabled={uploading} />
-            </label>
+            {/* Upload button — step 1: selecionar arquivo */}
+            {!arquivoSelecionado && !uploading && (
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px',
+                background: '#1a73e8', color: '#fff', borderRadius: 6, cursor: 'pointer',
+                fontSize: 13, fontWeight: 500,
+              }}>
+                📥 Carregar PDF Digisat
+                <input ref={fileRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+              </label>
+            )}
+
+            {/* Step 2: arquivo selecionado — confirmar ou cancelar */}
+            {arquivoSelecionado && !uploading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 14px' }}>
+                <span style={{ fontSize: 13, color: '#0369a1' }}>📄 {arquivoSelecionado.name}</span>
+                <button
+                  onClick={confirmarImportacao}
+                  style={{ padding: '5px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+                >
+                  ✅ Importar
+                </button>
+                <button
+                  onClick={cancelarSelecao}
+                  style={{ padding: '5px 10px', background: 'none', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+
+            {uploading && (
+              <span style={{ fontSize: 13, color: '#6b7280' }}>⏳ Processando PDF...</span>
+            )}
+
             {uploadMsg && <span style={{ fontSize: 13, color: uploadMsg.startsWith('✅') ? '#16a34a' : '#dc2626' }}>{uploadMsg}</span>}
           </div>
 

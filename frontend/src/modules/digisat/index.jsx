@@ -7,6 +7,7 @@ const fmtInt = v => v == null ? '—' : Number(v).toLocaleString('pt-BR')
 export default function Digisat() {
   const [importacoes, setImportacoes] = useState([])
   const [carregando, setCarregando] = useState(true)
+  const [arquivoSelecionado, setArquivoSelecionado] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState('')
@@ -27,25 +28,40 @@ export default function Digisat() {
     finally { setCarregando(false) }
   }
 
-  async function handleUpload(e) {
+  function handleFileChange(e) {
     const file = e.target.files[0]
     if (!file) return
+    setArquivoSelecionado(file)
+    setErro('')
+    setSucesso('')
+  }
+
+  function cancelarSelecao() {
+    setArquivoSelecionado(null)
+    setErro('')
+    setSucesso('')
+    fileRef.current.value = ''
+  }
+
+  async function confirmarImportacao() {
+    if (!arquivoSelecionado) return
     setErro('')
     setSucesso('')
     setUploading(true)
     const form = new FormData()
-    form.append('pdf', file)
+    form.append('pdf', arquivoSelecionado)
     try {
       const { data } = await api.post('/digisat/importar', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
       setSucesso(`Importação concluída: ${data.total_produtos} produtos importados.`)
+      setArquivoSelecionado(null)
+      fileRef.current.value = ''
       await carregar()
     } catch (err) {
       setErro(err.response?.data?.erro || 'Erro ao importar PDF.')
     } finally {
       setUploading(false)
-      fileRef.current.value = ''
     }
   }
 
@@ -78,21 +94,47 @@ export default function Digisat() {
 
       {/* Upload */}
       <div style={{ background: '#fff', borderRadius: 10, padding: 24, marginBottom: 24, boxShadow: '0 1px 4px #0001', border: '2px dashed #d1d5db' }}>
-        <p style={{ margin: '0 0 12px', color: '#374151', fontWeight: 500 }}>Importar relatório PDF do Digisat</p>
-        <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13 }}>Faça upload do relatório "Itens vendidos" exportado do sistema Digisat (PDF).</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleUpload}
-            disabled={uploading}
-            style={{ fontSize: 14 }}
-          />
-          {uploading && <span style={{ color: '#6b7280', fontSize: 14 }}>Processando PDF...</span>}
+        <p style={{ margin: '0 0 4px', color: '#374151', fontWeight: 500 }}>Importar relatório PDF do Digisat</p>
+        <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13 }}>Selecione o relatório "Itens vendidos" exportado do sistema Digisat e clique em Importar.</p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {/* Passo 1: selecionar arquivo */}
+          {!arquivoSelecionado && !uploading && (
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px',
+              background: '#1a73e8', color: '#fff', borderRadius: 7, cursor: 'pointer', fontSize: 14, fontWeight: 500,
+            }}>
+              📂 Selecionar PDF
+              <input ref={fileRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+            </label>
+          )}
+
+          {/* Passo 2: confirmar importação */}
+          {arquivoSelecionado && !uploading && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '8px 14px' }}>
+                <span style={{ fontSize: 13, color: '#0369a1' }}>📄 {arquivoSelecionado.name}</span>
+              </div>
+              <button
+                onClick={confirmarImportacao}
+                style={{ padding: '8px 20px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
+              >
+                ✅ Importar agora
+              </button>
+              <button
+                onClick={cancelarSelecao}
+                style={{ padding: '8px 14px', background: 'none', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 7, cursor: 'pointer', fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+            </>
+          )}
+
+          {uploading && <span style={{ color: '#6b7280', fontSize: 14 }}>⏳ Processando PDF...</span>}
         </div>
-        {erro && <p style={{ color: '#dc2626', marginTop: 10, fontSize: 14 }}>{erro}</p>}
-        {sucesso && <p style={{ color: '#16a34a', marginTop: 10, fontSize: 14 }}>{sucesso}</p>}
+
+        {erro && <p style={{ color: '#dc2626', marginTop: 12, fontSize: 14 }}>{erro}</p>}
+        {sucesso && <p style={{ color: '#16a34a', marginTop: 12, fontSize: 14 }}>{sucesso}</p>}
       </div>
 
       {/* Lista de importações */}
