@@ -5,7 +5,11 @@ const { Pool } = pg
 
 export const pool = new Pool(
   process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        max: 5,
+      }
     : {
         host: process.env.DB_HOST,
         port: process.env.DB_PORT,
