@@ -1,0 +1,63 @@
+.dashboards {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dash-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.dash-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.dash-card-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.dash-card-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e2a3a;
+}
+
+.dash-card-change {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dash-card-change--success { color: var(--success); }
+.dash-card-change--danger  { color: var(--danger); }
+.dash-card-change--primary { color: var(--primary); }
+.dash-card-change--warning { color: #f59e0b; }
+
+.dash-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dash-chart-box {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.dash-chart-box h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e2a3a;
+  margin-bottom: 16px;
+}

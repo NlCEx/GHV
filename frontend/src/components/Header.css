@@ -1,0 +1,43 @@
+.header {
+  height: 60px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e2a3a;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-user {
+  font-size: 14px;
+  color: #555;
+  font-weight: 500;
+}
+
+.header-logout {
+  font-size: 13px;
+  color: #888;
+  background: #f0f2f5;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.header-logout:hover {
+  background: #fce8e6;
+  color: var(--danger);
+}
