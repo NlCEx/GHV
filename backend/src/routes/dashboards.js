@@ -9,12 +9,26 @@ router.get('/resumo', async (req, res) => {
     const mesFilter = mes ? `AND TO_CHAR(data, 'YYYY-MM') = $1` : ''
     const params = mes ? [mes] : []
 
-    const [receitas, despesas, estoque, pesquisas, criticos] = await Promise.all([
+    // Mês anterior para comparação
+    let prevParams = []
+    let prevMesFilter = ''
+    if (mes) {
+      const [year, month] = mes.split('-').map(Number)
+      const prevYear = month === 1 ? year - 1 : year
+      const prevMonth = month === 1 ? 12 : month - 1
+      const prevMes = `${prevYear}-${String(prevMonth).padStart(2, '0')}`
+      prevMesFilter = `AND TO_CHAR(data, 'YYYY-MM') = $1`
+      prevParams = [prevMes]
+    }
+
+    const [receitas, despesas, estoque, pesquisas, criticos, prevReceitas, prevDespesas] = await Promise.all([
       pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'receita' ${mesFilter}`, params),
       pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'despesa' ${mesFilter}`, params),
       pool.query('SELECT COALESCE(SUM(qtd), 0) AS total FROM produtos'),
       pool.query("SELECT COUNT(*) AS total FROM pesquisas WHERE status = 'ativa'"),
       pool.query("SELECT COUNT(*) AS total FROM produtos WHERE minimo > 0 AND qtd < minimo"),
+      pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'receita' ${prevMesFilter}`, prevParams),
+      pool.query(`SELECT COALESCE(SUM(valor), 0) AS total FROM lancamentos WHERE tipo = 'despesa' ${prevMesFilter}`, prevParams),
     ])
 
     res.json({
@@ -23,6 +37,10 @@ router.get('/resumo', async (req, res) => {
       estoque: Number(estoque.rows[0].total),
       pesquisasAtivas: Number(pesquisas.rows[0].total),
       produtosCriticos: Number(criticos.rows[0].total),
+      anterior: mes ? {
+        receitas: Number(prevReceitas.rows[0].total),
+        despesas: Number(prevDespesas.rows[0].total),
+      } : null,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -45,6 +63,43 @@ router.get('/tendencia', async (req, res) => {
       ORDER BY mes ASC
     `)
     res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/ultimos-lancamentos', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, descricao, tipo, valor, data
+      FROM lancamentos
+      ORDER BY data DESC, id DESC
+      LIMIT 8
+    `)
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/distribuicao', async (req, res) => {
+  try {
+    const { mes } = req.query
+    const mesFilter = mes ? `AND TO_CHAR(data, 'YYYY-MM') = $1` : ''
+    const params = mes ? [mes] : []
+
+    const { rows } = await pool.query(`
+      SELECT tipo, descricao, SUM(valor) AS total
+      FROM lancamentos
+      WHERE 1=1 ${mesFilter}
+      GROUP BY tipo, descricao
+      ORDER BY tipo, total DESC
+    `, params)
+
+    res.json({
+      receitas: rows.filter(r => r.tipo === 'receita').slice(0, 6),
+      despesas: rows.filter(r => r.tipo === 'despesa').slice(0, 6),
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

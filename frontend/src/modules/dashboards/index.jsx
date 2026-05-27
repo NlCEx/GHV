@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, Legend
+  ResponsiveContainer, Cell, Legend,
+  AreaChart, Area,
 } from 'recharts'
 import api from '../../api'
 import './dashboards.css'
@@ -13,8 +14,9 @@ const fmtK = v => {
   if (n >= 1000) return `R$ ${(n / 1000).toFixed(0)}k`
   return `R$ ${fmt(n)}`
 }
+const truncar = (s, n = 24) => !s ? '' : s.length > n ? s.substring(0, n) + '…' : s
 
-const COLORS = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#9c27b0', '#00bcd4', '#ff7043', '#8bc34a', '#795548', '#607d8b']
+const COLORS = ['#1a73e8', '#34a853', '#fbbc04', '#ea4335', '#9c27b0', '#00bcd4']
 const MESES_ABR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 const mesAtual = () => {
@@ -30,10 +32,23 @@ function abreviarDescricao(desc, max = 28) {
   return sem.length > max ? sem.substring(0, max) + '…' : sem
 }
 
+function Variacao({ atual, anterior, invertido = false }) {
+  if (anterior == null || anterior === 0) return null
+  const pct = ((atual - anterior) / anterior) * 100
+  const positivo = invertido ? pct <= 0 : pct >= 0
+  return (
+    <span className={`dash-badge ${positivo ? 'dash-badge--up' : 'dash-badge--down'}`}>
+      {pct >= 0 ? '▲' : '▼'} {Math.abs(pct).toFixed(1)}%
+    </span>
+  )
+}
+
 export default function Dashboards() {
   const [resumo, setResumo] = useState(null)
   const [digisat, setDigisat] = useState(null)
   const [tendencia, setTendencia] = useState([])
+  const [ultimosLancamentos, setUltimosLancamentos] = useState([])
+  const [distribuicao, setDistribuicao] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [mesFiltro, setMesFiltro] = useState(mesAtual)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
@@ -46,14 +61,18 @@ export default function Dashboards() {
     setCarregando(true)
     try {
       const mesParam = mesFiltro ? `?mes=${mesFiltro}` : ''
-      const [r, d, t] = await Promise.all([
+      const [r, d, t, ul, dist] = await Promise.all([
         api.get(`/dashboards/resumo${mesParam}`),
         api.get('/dashboards/digisat'),
         api.get('/dashboards/tendencia'),
+        api.get('/dashboards/ultimos-lancamentos'),
+        api.get(`/dashboards/distribuicao${mesParam}`),
       ])
       setResumo(r.data)
       setDigisat(d.data)
       setTendencia(t.data)
+      setUltimosLancamentos(ul.data)
+      setDistribuicao(dist.data)
       setUltimaAtualizacao(new Date())
     } catch { /* silent */ }
     finally { setCarregando(false) }
@@ -61,14 +80,12 @@ export default function Dashboards() {
 
   useEffect(() => { carregar() }, [carregar])
 
-  // Auto-refresh ao voltar para a aba
   useEffect(() => {
     const handler = () => { if (document.visibilityState === 'visible') carregar() }
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
   }, [carregar])
 
-  // Polling: atualiza a cada 60 segundos enquanto a página está aberta
   useEffect(() => {
     const id = setInterval(carregar, 60_000)
     return () => clearInterval(id)
@@ -97,7 +114,7 @@ export default function Dashboards() {
       const { data } = await api.post('/digisat/importar', form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      setUploadMsg(`✅ ${data.total_produtos} produtos importados com sucesso!`)
+      setUploadMsg(`✅ ${data.total_produtos} produtos importados!`)
       setArquivoSelecionado(null)
       fileRef.current.value = ''
       await carregar()
@@ -109,25 +126,38 @@ export default function Dashboards() {
   }
 
   const saldo = resumo ? resumo.receitas - resumo.despesas : 0
+  const saldoAnterior = resumo?.anterior
+    ? resumo.anterior.receitas - resumo.anterior.despesas
+    : null
 
+  // Tendência com saldo acumulado
+  let acumulado = 0
   const tendenciaData = tendencia.map(t => {
     const [, m] = t.mes.split('-')
-    return {
-      mes: MESES_ABR[parseInt(m) - 1],
-      receitas: Number(t.receitas),
-      despesas: Number(t.despesas),
-    }
+    const rec = Number(t.receitas)
+    const des = Number(t.despesas)
+    acumulado += rec - des
+    return { mes: MESES_ABR[parseInt(m) - 1], receitas: rec, despesas: des, saldoAcumulado: acumulado }
   })
 
   const topChartData = (digisat?.topProdutos || []).map(p => ({
     nome: abreviarDescricao(p.descricao),
     valor: Number(p.total_vendas),
-    saldo: Number(p.saldo),
   }))
 
   const estoqueBaixoData = (digisat?.estoqueBaixo || []).map(p => ({
     nome: abreviarDescricao(p.descricao, 24),
     saldo: Number(p.saldo),
+  }))
+
+  const distReceitasData = (distribuicao?.receitas || []).map(r => ({
+    nome: truncar(r.descricao),
+    total: Number(r.total),
+  }))
+
+  const distDespesasData = (distribuicao?.despesas || []).map(r => ({
+    nome: truncar(r.descricao),
+    total: Number(r.total),
   }))
 
   const labelMes = mesFiltro
@@ -165,7 +195,7 @@ export default function Dashboards() {
         )}
       </div>
 
-      {/* ── Skeleton no primeiro carregamento ── */}
+      {/* Skeleton primeiro carregamento */}
       {carregando && !resumo && (
         <div className="dash-skeleton-grid">
           {[...Array(6)].map((_, i) => <div key={i} className="dash-skeleton-card" />)}
@@ -182,40 +212,154 @@ export default function Dashboards() {
             </div>
             <div className="dash-cards">
               {[
-                { label: 'Receitas', value: `R$ ${fmt(resumo.receitas)}`, color: 'success' },
-                { label: 'Despesas', value: `R$ ${fmt(resumo.despesas)}`, color: 'danger' },
-                { label: 'Saldo', value: `R$ ${fmt(saldo)}`, color: saldo >= 0 ? 'success' : 'danger' },
-                { label: 'Itens em Estoque', value: Number(resumo.estoque).toLocaleString('pt-BR'), color: 'primary' },
-                { label: 'Pesquisas Ativas', value: resumo.pesquisasAtivas, color: 'warning' },
-                { label: 'Estoque Crítico', value: resumo.produtosCriticos, color: resumo.produtosCriticos > 0 ? 'danger' : 'success' },
+                {
+                  label: 'Receitas',
+                  value: `R$ ${fmt(resumo.receitas)}`,
+                  color: 'success',
+                  badge: <Variacao atual={resumo.receitas} anterior={resumo.anterior?.receitas} />,
+                },
+                {
+                  label: 'Despesas',
+                  value: `R$ ${fmt(resumo.despesas)}`,
+                  color: 'danger',
+                  badge: <Variacao atual={resumo.despesas} anterior={resumo.anterior?.despesas} invertido />,
+                },
+                {
+                  label: 'Saldo',
+                  value: `R$ ${fmt(saldo)}`,
+                  color: saldo >= 0 ? 'success' : 'danger',
+                  badge: <Variacao atual={saldo} anterior={saldoAnterior} />,
+                },
+                {
+                  label: 'Itens em Estoque',
+                  value: Number(resumo.estoque).toLocaleString('pt-BR'),
+                  color: 'primary',
+                },
+                {
+                  label: 'Pesquisas Ativas',
+                  value: resumo.pesquisasAtivas,
+                  color: 'warning',
+                },
+                {
+                  label: 'Estoque Crítico',
+                  value: resumo.produtosCriticos,
+                  color: resumo.produtosCriticos > 0 ? 'danger' : 'success',
+                },
               ].map(c => (
                 <div key={c.label} className="dash-card">
                   <span className="dash-card-label">{c.label}</span>
                   <span className={`dash-card-value dash-card-value--${c.color}`}>{c.value}</span>
+                  {c.badge}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* ── Tendência Financeira ── */}
+          {/* ── Tendência + Saldo Acumulado ── */}
           {tendenciaData.length > 1 && (
-            <div className="dash-chart-box">
-              <h3>Receitas × Despesas — Últimos {tendenciaData.length} meses</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={tendenciaData} margin={{ left: 10, right: 10, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={72} />
-                  <Tooltip formatter={(v, n) => [`R$ ${fmt(v)}`, n === 'receitas' ? 'Receitas' : 'Despesas']} />
-                  <Legend formatter={n => n === 'receitas' ? 'Receitas' : 'Despesas'} />
-                  <Bar dataKey="receitas" name="receitas" fill="#34a853" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="despesas" name="despesas" fill="#ea4335" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="dash-charts">
+              <div className="dash-chart-box">
+                <h3>Receitas × Despesas — últimos {tendenciaData.length} meses</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={tendenciaData} margin={{ left: 0, right: 10, top: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={68} />
+                    <Tooltip formatter={(v, n) => [`R$ ${fmt(v)}`, n === 'receitas' ? 'Receitas' : 'Despesas']} />
+                    <Legend formatter={n => n === 'receitas' ? 'Receitas' : 'Despesas'} />
+                    <Bar dataKey="receitas" name="receitas" fill="#34a853" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="despesas" name="despesas" fill="#ea4335" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="dash-chart-box">
+                <h3>Saldo acumulado</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={tendenciaData} margin={{ left: 0, right: 10, top: 4, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradSaldo" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#1a73e8" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="#1a73e8" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={68} />
+                    <Tooltip formatter={(v) => [`R$ ${fmt(v)}`, 'Saldo acumulado']} />
+                    <Area
+                      type="monotone"
+                      dataKey="saldoAcumulado"
+                      stroke="#1a73e8"
+                      fill="url(#gradSaldo)"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: '#1a73e8' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 
-          {/* ── Digisat section ── */}
+          {/* ── Distribuição por lançamento ── */}
+          {(distReceitasData.length > 0 || distDespesasData.length > 0) && (
+            <div className="dash-charts">
+              {distReceitasData.length > 0 && (
+                <div className="dash-chart-box">
+                  <h3>Top receitas{mesFiltro ? ` — ${labelMes}` : ''}</h3>
+                  <ResponsiveContainer width="100%" height={Math.max(160, distReceitasData.length * 36)}>
+                    <BarChart data={distReceitasData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => fmtK(v)} />
+                      <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={140} />
+                      <Tooltip formatter={(v) => [`R$ ${fmt(v)}`, 'Total']} />
+                      <Bar dataKey="total" fill="#34a853" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {distDespesasData.length > 0 && (
+                <div className="dash-chart-box">
+                  <h3>Top despesas{mesFiltro ? ` — ${labelMes}` : ''}</h3>
+                  <ResponsiveContainer width="100%" height={Math.max(160, distDespesasData.length * 36)}>
+                    <BarChart data={distDespesasData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => fmtK(v)} />
+                      <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={140} />
+                      <Tooltip formatter={(v) => [`R$ ${fmt(v)}`, 'Total']} />
+                      <Bar dataKey="total" fill="#ea4335" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Últimos lançamentos ── */}
+          {ultimosLancamentos.length > 0 && (
+            <div className="dash-chart-box">
+              <h3>Últimos lançamentos</h3>
+              <div className="dash-lancamentos">
+                {ultimosLancamentos.map(l => (
+                  <div key={l.id} className="dash-lancamento-row">
+                    <span className="dash-lanc-data">
+                      {new Date(l.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                    </span>
+                    <span className="dash-lanc-desc">{l.descricao}</span>
+                    <span className={`dash-lanc-tipo dash-lanc-tipo--${l.tipo}`}>
+                      {l.tipo === 'receita' ? 'Receita' : 'Despesa'}
+                    </span>
+                    <span className={`dash-lanc-valor ${l.tipo === 'receita' ? 'dash-card-value--success' : 'dash-card-value--danger'}`}>
+                      {l.tipo === 'receita' ? '+' : '-'} R$ {fmt(l.valor)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Digisat ── */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#374151' }}>
               📊 Dados Digisat
@@ -243,15 +387,11 @@ export default function Dashboards() {
                 <button
                   onClick={confirmarImportacao}
                   style={{ padding: '5px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-                >
-                  ✅ Importar
-                </button>
+                >✅ Importar</button>
                 <button
                   onClick={cancelarSelecao}
                   style={{ padding: '5px 10px', background: 'none', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
-                >
-                  Cancelar
-                </button>
+                >Cancelar</button>
               </div>
             )}
 
